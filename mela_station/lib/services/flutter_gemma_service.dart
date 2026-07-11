@@ -6,6 +6,7 @@ import 'package:flutter_gemma/flutter_gemma.dart';
 
 import '../models/mela_card.dart';
 import 'gemma_service.dart';
+import 'mock_gemma_service.dart';
 
 /// The REAL on-device brain: Gemma 4 E2B (.litertlm) via flutter_gemma 0.13.6.
 /// See Docs/flutter_gemma.md — 0.13.6 API, NOT the pub.dev 1.x docs.
@@ -27,6 +28,12 @@ class FlutterGemmaService implements GemmaService {
   InferenceModel? _model;
   bool _ready = false;
 
+  /// If real inference can't come up (e.g. the flaky desktop gRPC server),
+  /// the app must NOT break — extraction quietly falls back to the mock so
+  /// every screen keeps working. Set only after a failed init.
+  MockGemmaService? _fallback;
+  bool get usingFallback => _fallback != null;
+
   /// Download progress 0-100 while installing (UI can watch this).
   final downloadProgress = ValueNotifier<int?>(null);
 
@@ -35,37 +42,58 @@ class FlutterGemmaService implements GemmaService {
   @override
   bool get isReady => _ready;
 
-  @override
-  Future<void> init() async {
-    await FlutterGemma.initialize();
-    if (!await FlutterGemma.isModelInstalled(modelFile)) {
-      final installer = FlutterGemma.installModel(modelType: ModelType.gemmaIt);
-      String? local;
-      for (final p in sideloadPaths) {
-        if (File(p).existsSync()) {
-          local = p;
-          break;
-        }
-      }
-      if (local != null) {
-        await installer.fromFile(local).install(); // offline path — references, no copy
-      } else {
-        await installer
-            .fromNetwork(modelUrl)
-            .withProgress((p) => downloadProgress.value = p)
-            .install();
-        downloadProgress.value = null;
+  Future<void> _ensureInstalled() async {
+    final installer = FlutterGemma.installModel(modelType: ModelType.gemmaIt);
+    String? local;
+    for (final p in sideloadPaths) {
+      if (File(p).existsSync()) {
+        local = p;
+        break;
       }
     }
-    // The slow weight load — ONCE, then warm forever (CLAUDE.md landmine).
-    _model = await FlutterGemma.getActiveModel(
-      maxTokens: 4096,
-      preferredBackend: PreferredBackend.gpu,
-      supportImage: _visionOk,
-      maxNumImages: 1,
-    );
-    _ready = true;
+    if (local != null) {
+      await installer.fromFile(local).install(); // offline path — references, no copy
+    } else {
+      await installer
+          .fromNetwork(modelUrl)
+          .withProgress((p) => downloadProgress.value = p)
+          .install();
+      downloadProgress.value = null;
+    }
   }
+
+  @override
+  Future<void> init() async {
+    try {
+      await FlutterGemma.initialize();
+      if (!await FlutterGemma.isModelInstalled(modelFile)) {
+        await _ensureInstalled();
+      }
+      // The slow weight load — ONCE, then warm forever (CLAUDE.md landmine).
+      try {
+        _model = await _loadModel();
+      } on StateError {
+        // isModelInstalled was stale (registered, but no ACTIVE model after
+        // a restart) — install then retry once. Common on desktop.
+        await _ensureInstalled();
+        _model = await _loadModel();
+      }
+      _ready = true;
+    } catch (e) {
+      // Real inference unavailable — degrade to mock, never crash the app.
+      debugPrint('FlutterGemmaService init failed ($e) — using mock fallback');
+      _fallback = MockGemmaService();
+      await _fallback!.init();
+      _ready = true;
+    }
+  }
+
+  Future<InferenceModel> _loadModel() => FlutterGemma.getActiveModel(
+        maxTokens: 4096,
+        preferredBackend: PreferredBackend.gpu,
+        supportImage: _visionOk,
+        maxNumImages: 1,
+      );
 
   String _schemaPrompt(String task) =>
       'You are helping at a lost-and-found camp at an Indian mela. $task\n'
@@ -78,6 +106,9 @@ class FlutterGemmaService implements GemmaService {
   @override
   Future<Map<String, String>> extractFromText(String text,
       {Map<String, String>? existing}) async {
+    if (_fallback != null) {
+      return _fallback!.extractFromText(text, existing: existing);
+    }
     final task = existing == null
         ? 'Extract the lost-person card from this parent\'s statement '
             '(may be Hindi): "$text"'
@@ -90,6 +121,7 @@ class FlutterGemmaService implements GemmaService {
 
   @override
   Future<Map<String, String>> extractFromImage(Uint8List imageBytes) async {
+    if (_fallback != null) return _fallback!.extractFromImage(imageBytes);
     if (!_visionOk) {
       // Frozen plan: photos are taken on Android stations. Never crash.
       return {for (final k in MelaCard.attributeKeys) k: 'unknown'};

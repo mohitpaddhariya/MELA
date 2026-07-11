@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../config.dart';
@@ -23,6 +25,25 @@ class BoardScreen extends StatefulWidget {
 }
 
 class _BoardScreenState extends State<BoardScreen> {
+  Timer? _brainPoll;
+
+  @override
+  void initState() {
+    super.initState();
+    // The brain badge must flip green the moment the model finishes loading.
+    _brainPoll = Timer.periodic(const Duration(seconds: 2), (t) {
+      if (!mounted) return t.cancel();
+      if (widget.gemma.isReady) t.cancel();
+      setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    _brainPoll?.cancel();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
