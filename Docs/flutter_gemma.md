@@ -117,3 +117,5 @@ Release builds: ProGuard rules auto-included (keep `com.google.mediapipe.**` / `
 5. `getActiveModel()` throws `StateError('No active inference model set…')` if `installModel()` never ran — gate app start on `isModelInstalled`. First `getActiveModel()` does the slow weight load: once, behind splash, then keep warm.
 6. CHANGELOG traps fixed in 0.13.3–0.13.6 (stay pinned, don't downgrade): iOS pod install hang (0.13.3), iOS XNNPack compile error + arm64 simulator (0.13.4), Qwen3 think-tag leakage (0.13.5). Gemma 4 thinking mode only works since 0.13.1 (and not on Web).
 7. Model files are 2.4GB — **never commit** (already gitignored). Sideload per phone via `adb push` / Files, then `.fromFile()`.
+
+8. **Desktop/iOS: supportImage MUST be false for Gemma 4 .litertlm.** The desktop LiteRT-LM runtime rejects the Gemma 4 vision encoder ("must have exactly one signature but got 3") and the whole engine init fails. Vision = Android only. Also: the bundled JVM server is signed sandbox-inherit — never disable the macOS app sandbox; put the model INSIDE the app container instead.

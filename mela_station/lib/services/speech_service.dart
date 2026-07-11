@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart';
@@ -12,6 +14,16 @@ class SpeechService {
   final listening = ValueNotifier<bool>(false);
 
   Future<void> init() async {
+    if (Platform.isMacOS) {
+      // Desktop dev rig: typed input only. Requesting speech-recognition
+      // TCC permission from a bundle-unattributed process SIGABRTs the app.
+      sttAvailable = false;
+      try {
+        await _tts.setLanguage('hi-IN');
+        await _tts.awaitSpeakCompletion(true);
+      } catch (_) {}
+      return;
+    }
     try {
       sttAvailable = await _stt.initialize(
         onError: (_) => listening.value = false,

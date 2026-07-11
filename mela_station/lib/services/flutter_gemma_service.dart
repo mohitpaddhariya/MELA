@@ -21,6 +21,10 @@ class FlutterGemmaService implements GemmaService {
   /// (offline venue!). Mac dev path is hardcoded (CLAUDE.md rule); phones
   /// get the file via adb push / Files into these spots.
   static const sideloadPaths = [
+    // macOS: inside the sandbox container — both app AND its child JVM
+    // inference server can read here without entitlement tricks.
+    '/Users/mohitpaddhariya/Library/Containers/com.mela.melaStation/Data/'
+        'Documents/gemma-4-E2B-it.litertlm',
     '/Users/mohitpaddhariya/flagship-projects/MELA/models/gemma-4-E2B-it.litertlm',
     '/sdcard/Download/gemma-4-E2B-it.litertlm',
   ];
@@ -37,7 +41,10 @@ class FlutterGemmaService implements GemmaService {
   /// Download progress 0-100 while installing (UI can watch this).
   final downloadProgress = ValueNotifier<int?>(null);
 
-  bool get _visionOk => !Platform.isIOS; // .litertlm vision: Android/desktop only
+  // Vision ONLY on Android (frozen demo plan). iOS .litertlm is text-only,
+  // and the desktop LiteRT-LM runtime can't parse Gemma 4's vision encoder
+  // ("must have exactly one signature but got 3") — text-only loads fine.
+  bool get _visionOk => Platform.isAndroid;
 
   @override
   bool get isReady => _ready;

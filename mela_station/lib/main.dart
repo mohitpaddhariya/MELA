@@ -28,19 +28,15 @@ void main() async {
   // A revived station must come back as ITSELF (station id + hub IP).
   MelaConfig.station = store.getSetting('station') ?? MelaConfig.station;
   MelaConfig.hubUrl = store.getSetting('hubUrl') ?? MelaConfig.hubUrl;
-  // Brain default:
-  //  - Phones (Android/iOS) = REAL Gemma when the model file is present
-  //    (the demo target; tested install path; vision on Android).
-  //  - Desktop (macOS dev) = MOCK. The desktop LiteRT-LM gRPC server is
-  //    flaky and NOT the demo target; a crash there must never sink the app.
-  //  The persisted Board toggle always wins if the user set it explicitly.
+  // Brain default: REAL Gemma whenever the model file is present (all
+  // platforms). Init failure degrades to mock inside FlutterGemmaService —
+  // the app can no longer crash from a bad model load. The persisted Board
+  // toggle always wins if the user set it explicitly.
   final mockSetting = store.getSetting('useMockAi');
-  final isMobile = Platform.isAndroid || Platform.isIOS;
   final modelPresent =
       FlutterGemmaService.sideloadPaths.any((p) => File(p).existsSync());
-  MelaConfig.useMockAi = mockSetting != null
-      ? mockSetting != 'false'
-      : !(isMobile && modelPresent);
+  MelaConfig.useMockAi =
+      mockSetting != null ? mockSetting != 'false' : !modelPresent;
 
   // THE AI SEAM: flip MelaConfig.useMockAi=false for the real on-device brain.
   gemma = MelaConfig.useMockAi ? MockGemmaService() : FlutterGemmaService();
