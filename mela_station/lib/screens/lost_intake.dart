@@ -123,12 +123,10 @@ class _LostIntakeScreenState extends State<LostIntakeScreen> {
           ValueListenableBuilder<bool>(
             valueListenable: widget.speech.listening,
             builder: (_, on, __) => FilledButton.icon(
-              onPressed: widget.speech.sttAvailable
-                  ? () => on
-                      ? widget.speech.stopListening()
-                      : widget.speech.listen((t) =>
-                          setState(() => _text.text = t))
-                  : null,
+              onPressed: () => on
+                  ? widget.speech.stopListening()
+                  : widget.speech
+                      .listen((t) => setState(() => _text.text = t)),
               icon: Icon(on ? Icons.stop : Icons.mic),
               label: Text(on ? 'सुन रहा है…' : 'बोलिए'),
             ),
@@ -170,12 +168,10 @@ class _LostIntakeScreenState extends State<LostIntakeScreen> {
                         ValueListenableBuilder<bool>(
                           valueListenable: widget.speech.listening,
                           builder: (_, on, __) => OutlinedButton.icon(
-                            onPressed: widget.speech.sttAvailable
-                                ? () => on
-                                    ? widget.speech.stopListening()
-                                    : widget.speech.listen((t) =>
-                                        setState(() => _answer.text = t))
-                                : null,
+                            onPressed: () => on
+                                ? widget.speech.stopListening()
+                                : widget.speech.listen((t) =>
+                                    setState(() => _answer.text = t)),
                             icon: Icon(on ? Icons.stop : Icons.mic),
                             label: const Text('बोलिए'),
                           ),

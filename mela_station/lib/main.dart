@@ -105,6 +105,26 @@ class _HomeShellState extends State<HomeShell> {
   int _tab = 0;
 
   @override
+  void initState() {
+    super.initState();
+    speech.notice.addListener(_showNotice);
+  }
+
+  @override
+  void dispose() {
+    speech.notice.removeListener(_showNotice);
+    super.dispose();
+  }
+
+  void _showNotice() {
+    final msg = speech.notice.value;
+    if (msg == null || !mounted) return;
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(msg), duration: const Duration(seconds: 6)));
+    speech.notice.value = null;
+  }
+
+  @override
   Widget build(BuildContext context) {
     final screens = [
       BoardScreen(store: store, sync: sync, gemma: gemma),
