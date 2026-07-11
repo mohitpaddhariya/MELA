@@ -26,6 +26,20 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Volunteers speak lost-person reports in Hindi; audio is processed on this phone only.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>On-device Hindi speech recognition turns spoken reports into search cards. Nothing leaves the phone.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>One consented photo of a found person; the photo never leaves this phone.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Pick a consented photo of a found person; the photo never leaves this phone.</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>MELA syncs small text cards with other volunteer stations over the local hotspot. No internet is used.</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

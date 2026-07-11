@@ -26,6 +26,10 @@
 	<string>$(PRODUCT_COPYRIGHT)</string>
 	<key>NSMainNibFile</key>
 	<string>MainMenu</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Dev testing of Hindi speech intake.</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Dev testing of on-device Hindi speech recognition.</string>
 	<key>NSPrincipalClass</key>
 	<string>NSApplication</string>
 </dict>
