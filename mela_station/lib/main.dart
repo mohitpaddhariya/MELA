@@ -6,6 +6,7 @@ import 'screens/found_intake.dart';
 import 'screens/lost_intake.dart';
 import 'screens/matches.dart';
 import 'services/card_store.dart';
+import 'services/flutter_gemma_service.dart';
 import 'services/gemma_service.dart';
 import 'services/mock_gemma_service.dart';
 import 'services/speech_service.dart';
@@ -21,9 +22,8 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await store.init(); // restart-safe truth first
 
-  // THE AI SEAM: Stage 4 flips MelaConfig.useMockAi and constructs the real
-  // FlutterGemmaService here. Nothing else in the app changes.
-  gemma = MockGemmaService();
+  // THE AI SEAM: flip MelaConfig.useMockAi=false for the real on-device brain.
+  gemma = MelaConfig.useMockAi ? MockGemmaService() : FlutterGemmaService();
 
   sync = SyncService(store);
   runApp(const MelaApp());
