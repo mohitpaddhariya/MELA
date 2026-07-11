@@ -1,3 +1,5 @@
+⚠ Our app pins flutter_gemma 0.13.6 — on iOS, .litertlm models are TEXT-ONLY (no vision). Vision demo runs on Android. See flutter_gemma.md.
+
 # MELA Cheat Sheet — Gemma 4 E2B on-device (.litertlm) via flutter_gemma
 Verified live 2026-07-11. **Planning-doc assumption "Gemma 4 E2B, released April 2, 2026" is CORRECT** — Gemma 4 (E2B/E4B/26B MoE/31B) shipped Apr 2, 2026, Apache-2.0 (12B Unified added Jun 3, 2026). Gemma 3n still exists but Gemma 4 E2B supersedes it (smaller file, faster, native vision+audio, function calling).
 

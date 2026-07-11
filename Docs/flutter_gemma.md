@@ -1,127 +1,119 @@
-# flutter_gemma Cheat Sheet — verified live 2026-07-11 (MELA demo path)
+# flutter_gemma 0.13.6 Cheat Sheet (MELA demo path)
 
-## 1. Install (API changed at 1.0 — modular split; old tutorials are stale)
-```yaml
-dependencies:
-  flutter_gemma: ^1.2.2              # core (published 2026-07-08) — NO engine by itself
-  flutter_gemma_litertlm: ^1.0.2     # runs .litertlm (FFI; Android/iOS/desktop, web preview)
-  flutter_gemma_mediapipe: ^1.0.4    # runs .task (MediaPipe; Android/iOS/web)
-```
-Add at least one engine package. For the demo, `flutter_gemma_mediapipe` + a `.task` model OR `flutter_gemma_litertlm` + `.litertlm` both work on Android+iOS.
+> ## ⚠⚠ PINNED TO flutter_gemma **0.13.6** — Dart 3.11 limit. ⚠⚠
+> **Do NOT follow pub.dev 1.x docs** (`FlutterGemma.initialize(inferenceEngines:)`, `flutter_gemma_litertlm/_mediapipe` engine packages, `Message.withImages`, `maxOutputTokens` — NONE of that exists here).
+> **iOS `.litertlm` = TEXT ONLY (no vision, no audio).** All vision demos happen on **Android**. iPhone 16 station = text path only.
+> Source of truth: `~/.pub-cache/hosted/pub.dev/flutter_gemma-0.13.6/README.md` + CHANGELOG.
 
-## 2. Initialize once in main() (MANDATORY — otherwise `getActiveModel()` throws "add the engine package")
+## 1. Install model (ONE time, persisted on device; sets it "active")
 ```dart
-import 'package:flutter_gemma/flutter_gemma.dart';
-import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
-import 'package:flutter_gemma_mediapipe/flutter_gemma_mediapipe.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';   // exports FlutterGemma, ModelType, Message, Tool, responses…
 
-void main() {
+// From network with progress (progress is int 0-100). Gemma 4 repo is Apache-2.0 → NO token needed.
+await FlutterGemma.installModel(modelType: ModelType.gemmaIt)      // Gemma 4 uses gemmaIt — there is NO ModelType.gemma4 in 0.13.6
+  .fromNetwork(
+    'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
+    // token: 'hf_...',  // only for gated repos (google/gemma-3n-*, Gemma3-1B-IT) — or set once via FlutterGemma.initialize(huggingFaceToken:)
+  )
+  .withProgress((progress) => print('$progress%'))
+  .install();
+
+// From a sideloaded file (adb push / Files app — our offline path). References the file, no copy:
+await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
+  .fromFile('/absolute/path/gemma-4-E2B-it.litertlm').install();
+// Also: .fromAsset('models/x.litertlm')  .fromBundled('x.litertlm')
+final ok = await FlutterGemma.isModelInstalled('gemma-4-E2B-it.litertlm');
+```
+`ModelType` values: `gemmaIt` (ALL Gemma incl. 4/3n/3), `deepSeek`, `qwen`, `qwen3`, `functionGemma`, `phi`, `general`, `llama`, `hammer`. `ModelFileType`: `.litertlm` files → `ModelFileType.litertlm` (added 0.13.0; auto-detected from extension, README says `.task`/`.litertlm` behave identically — MediaPipe handles chat templates).
+
+## 2. Startup: load ONCE, keep warm (GemmaService singleton)
+```dart
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  FlutterGemma.initialize(
-    inferenceEngines: const [LiteRtLmEngine(), MediaPipeEngine()],
-  );
+  await FlutterGemma.initialize();          // REQUIRED since 0.11.10. Optional: huggingFaceToken:, maxDownloadRetries: 10
   runApp(MyApp());
 }
-```
 
-## 3. Install model (one time, persisted; sets it "active")
-```dart
-// From network (gemma-licensed HF repos need token — incl. litert-community Gemma repos; gemma-4 repo is Apache-2.0, no token)
-await FlutterGemma.installModel(modelType: ModelType.gemma4)   // gemmaIt for Gemma 3n/3
-  .fromNetwork('https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm',
-      token: 'hf_...')
-  .withProgress((p) => print('$p%')).install();
-// Other sources: .fromAsset('assets/models/x.litertlm')  .fromFile('/abs/path/x.litertlm')  .fromBundled('x.litertlm')
-```
-`.fromFile()` is your offline friend: sideload via USB/adb/AirDrop-to-Files, then register. iOS: `UIFileSharingEnabled` lets you drop the file via Finder into the app's Documents.
-ModelType: `gemma4` (Gemma 4 E2B/E4B), `gemmaIt` (Gemma 3n / Gemma 3), `general`, etc.
-
-## 4. Create model + chat — LOAD ONCE at startup, keep warm
-```dart
-late final InferenceModel model;   // app-lifetime singleton
-model = await FlutterGemma.getActiveModel(
-  maxTokens: 2048,                 // CONTEXT WINDOW (input+output), .litertlm min 1024
-  preferredBackend: PreferredBackend.gpu,   // or PreferredBackend.cpu
-  supportImage: true,              // REQUIRED for vision
+// After install — do this ONCE behind the splash screen (first load = the slow weight load):
+final model = await FlutterGemma.getActiveModel(
+  maxTokens: 4096,                          // WHOLE context window (input+output). Default 1024. Example app uses 4096 for Gemma 4 E2B
+  preferredBackend: PreferredBackend.gpu,   // or PreferredBackend.cpu (fallback toggle for flaky GPUs)
+  supportImage: true,                       // Android vision; leave false on iOS (.litertlm text-only)
   maxNumImages: 1,
 );
 final chat = await model.createChat(
-  temperature: 0.8, topK: 1, // topP:, randomSeed: also available
-  supportImage: true,              // must ALSO be true here
-  systemInstruction: 'You are a lost-and-found matcher. Reply only in JSON.',
-  maxOutputTokens: 256,            // reply cap (.litertlm only; .task ignores it)
-  tokenBuffer: 256,
+  temperature: 1.0, topK: 64, topP: 0.95,   // example app's Gemma 4 E2B settings (defaults: 0.8 / 1 / null)
+  supportImage: true,                       // must ALSO be true here for vision
+  systemInstruction: 'Extract a lost-person card. Reply ONLY with JSON.',  // Android .litertlm: native; iOS/.task: auto-prepended to 1st message
+  // tokenBuffer: 256,  isThinking: false (default — keep false for speed),
 );
-await chat.addQueryChunk(Message.text(text: 'hello', isUser: true));
-final reply = await chat.generateChatResponse();          // or generateChatResponseAsync() stream
-// Keep `model` and `chat` alive between requests; model.close() only on app exit.
-// Fresh context per item: final c = await model.openChat();  (weights shared, history separate)
+
+// Send text, get full (non-streamed) response — returns ModelResponse, NOT String:
+await chat.addQueryChunk(Message.text(text: hindiTranscript, isUser: true));
+final ModelResponse response = await chat.generateChatResponse();
+if (response is TextResponse) print(response.token);   // sync mode: full text in .token
+// Streaming alt: chat.generateChatResponseAsync().listen((r) { if (r is TextResponse) buf += r.token; });
+// Keep model+chat alive app-lifetime. model.close() only on exit. One-shot alt: model.createSession() → session.getResponse() returns String → session.close().
 ```
 
-## 5. Multimodal (image) — Gemma 4 E2B/E4B, Gemma 3n E2B/E4B (also FastVLM)
+## 3. Vision (ANDROID ONLY with our .litertlm) — one photo → same JSON card
 ```dart
-final msg = Message.withImages(
-  text: 'Describe this item for a lost-and-found listing.',
-  imageBytes: [jpegOrPngBytes],    // List<Uint8List>; JPEG/PNG auto-handled
-  isUser: true,
+final Uint8List imageBytes = await photo.readAsBytes();   // JPEG/PNG handled automatically
+await chat.addQueryChunk(Message.withImage(               // SINGULAR withImage, ONE Uint8List (no withImages/list in 0.13.6)
+  text: 'Extract the lost-person card from this photo. Reply ONLY with JSON.',
+  imageBytes: imageBytes, isUser: true,
+));
+final r = await chat.generateChatResponse();
+if (r is TextResponse) parseCard(r.token);
+// Message.imageOnly(imageBytes: ..., isUser: true) also exists. message.hasImage to check.
+```
+`supportImage: true` needed at BOTH `getActiveModel()` AND `createChat()`. README: vision models want 8GB+ RAM devices; no other size guidance given — pre-shrink camera output anyway.
+
+## 4. Function calling / JSON output / thinking toggle
+```dart
+final chat = await model.createChat(
+  tools: [ const Tool(name: 'save_card', description: 'Save an extracted lost-person card',
+      parameters: {'type':'object','properties':{'age_range':{'type':'string'},'clothing_top':{'type':'string'}},
+                   'required':['age_range']}) ],
+  supportsFunctionCalls: true,              // REQUIRED alongside tools
+  toolChoice: ToolChoice.auto,              // auto | required | none
+  // maxFunctionBufferLength: 2048,         // new in 0.13.6 — raise if long function args get truncated
 );
-await chat.addQueryChunk(msg);
-final desc = await chat.generateChatResponse();
+final resp = await chat.generateChatResponse();
+if (resp is FunctionCallResponse) {
+  handle(resp.name, resp.args);             // args: Map<String, dynamic>
+  await chat.addQueryChunk(Message.toolResponse(toolName: resp.name, response: {'status': 'ok'}));
+} else if (resp is ParallelFunctionCallResponse) { for (final c in resp.calls) handle(c.name, c.args); }
 ```
-Resize photos to ~512-768px before passing (faster prefill, less RAM). Docs recommend 8GB+ RAM devices for vision models.
+**Demo-safer fallback (our default): NO tools.** systemInstruction = "Respond ONLY with JSON matching {schema}", then `jsonDecode` in try/catch, strip ```json fences, one retry on failure. Deterministic Dart owns the flow either way.
+**Thinking mode (Gemma 4, since 0.13.1):** `createChat(isThinking: true, modelType: ModelType.gemmaIt)` → `ThinkingResponse` chunks (`.content`) in the async stream; `<|think|>` auto-injected. **For speed leave `isThinking: false` (the default)** — no thinking tokens generated/parsed.
 
-## 6. Function calling (supported: Gemma 4, Gemma 3n, Gemma 3 1B, Qwen, Phi-4)
-```dart
-final chat = await model.createChat(tools: [
-  Tool(name: 'report_match', description: 'Report a matching found item',
-       parameters: {'type':'object','properties':{'item_id':{'type':'string'},'confidence':{'type':'number'}}}),
-]); // toolChoice: ToolChoice.auto / required / none
-chat.generateChatResponseAsync().listen((r) {
-  if (r is TextResponse) append(r.token);
-  if (r is FunctionCallResponse) { handle(r.name, r.args);
-    chat.addQueryChunk(Message.toolResponse(toolName: r.name, response: {'status':'ok'})); }
-});
-```
-Fallback (safer for a demo): skip tools; system-prompt "Respond ONLY with JSON matching {...}" + `jsonDecode` with try/catch + one retry.
-
-## 7. iOS (iPhone 16 = 8GB RAM, fine)
-- `ios/Podfile`: `platform :ios, '16.0'` and `use_frameworks! :linkage => :static`. No post_install needed.
-- `Runner.entitlements` (create + attach in Xcode Signing&Capabilities): `com.apple.developer.kernel.increased-memory-limit` = true, `com.apple.developer.kernel.extended-virtual-addressing` = true (+ `increased-debugging-memory-limit` for debug runs).
-- `Info.plist`: `UIFileSharingEnabled` = true (sideload models via Finder); `NSLocalNetworkUsageDescription` string (you need this anyway for your hotspot LAN); optional `CADisableMinimumFrameDurationOnPhone` = true.
-- Physical device only for GPU; Simulator = CPU-only (Metal sim 256MB cap ⚠ unverified).
-
-## 8. Android
-- minSdk 24, compileSdk 36 (plugin uses `com.google.mediapipe:tasks-genai:0.10.33`).
-- `.litertlm` runs on **arm64-v8a ONLY**; add `ndk { abiFilters 'arm64-v8a' }` in app build.gradle defaultConfig. (`.task` text also works on x86_64/armeabi-v7a.)
-- GPU: add inside `<application>` in AndroidManifest.xml:
+## 5. Platform config (exactly what the 0.13.6 README prescribes)
+**iOS** — `ios/Podfile`: `platform :ios, '16.0'` + `use_frameworks! :linkage => :static`. `Info.plist`: `UIFileSharingEnabled=true` (sideload via Finder), `NSLocalNetworkUsageDescription` (needed for our LAN hub anyway), optional `CADisableMinimumFrameDurationOnPhone=true`. `Runner.entitlements` (large models — REQUIRED or jetsam kills mid-generation): `com.apple.developer.kernel.extended-virtual-addressing`, `com.apple.developer.kernel.increased-memory-limit`, `com.apple.developer.kernel.increased-debugging-memory-limit` all `<true/>`. CHANGELOG 0.13.4: arm64 **excluded from simulator archs** (Apple-Silicon sim builds compile but = CPU sim only) — test on the real iPhone. 0.13.3 fixed `pod install` hanging — don't downgrade below it.
+**Android** — plugin ships minSdk 24 / compileSdk 36. GPU needs OpenCL lines in `AndroidManifest.xml` **inside `<application>`** (skip only if CPU-only):
 ```xml
-<uses-native-library android:name="libvndksupport.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-car.so" android:required="false"/>
 <uses-native-library android:name="libOpenCL-pixel.so" android:required="false"/>
 ```
-- No largeHeap needed (native memory). Models stored in app documents dir.
+Release builds: ProGuard rules auto-included (keep `com.google.mediapipe.**` / `com.google.protobuf.**` if you see `UnsatisfiedLinkError`). No abiFilters required by the README.
 
-## 9. Models + exact file names (verified on HF today)
-| Model | File | Size | Vision | Tools |
-|---|---|---|---|---|
-| Gemma 4 E2B (best pick) | `litert-community/gemma-4-E2B-it-litert-lm` → `gemma-4-E2B-it.litertlm` (Apache-2.0, NOT gated) | 2.4GB | Y | Y |
-| Gemma 3n E2B (.task) | `google/gemma-3n-E2B-it-litert-preview` → `gemma-3n-E2B-it-int4.task` (gated, needs HF token) | 3.1GB | Y | Y |
-| Gemma 3n E2B (.litertlm) | `google/gemma-3n-E2B-it-litert-lm` → `gemma-3n-E2B-it-int4.litertlm` (gated) | 3.7GB | Y | Y |
-| Gemma 3 1B (text-only fallback) | `litert-community/Gemma3-1B-IT` → `Gemma3-1B-IT_multi-prefill-seq_q4_ekv4096.litertlm` (gated) | 0.6GB | N | Y |
+## 6. Formats & our model
+| Format | Android | iOS | Web | Desktop |
+|---|:--:|:--:|:--:|:--:|
+| `.task` | ✅ | ✅ | ✅ | ❌ |
+| `.litertlm` | ✅ | ⚠️ **text only — no vision/audio** | ❌ | ✅ |
+| `-web.task` | ❌ | ❌ | ✅ | ❌ |
+| `.bin` | ✅ | ✅ | ✅ | ❌ |
+
+**Gemma 4 E2B** = 2.4GB, vision ✅ (Android), audio ✅ (Android/Desktop), function calling ✅, thinking ✅, multilingual, 128K-class context. Repo ungated (no HF token):
+`https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm/resolve/main/gemma-4-E2B-it.litertlm`
 
 ## GOTCHAS (demo killers)
-1. **The API you may remember is deprecated.** `FlutterGemmaPlugin.instance.modelManager` / `installModelFromAsset` / `downloadModelFromNetworkWithProgress` are legacy. Modern path = `FlutterGemma.initialize(...)` + `installModel(...)` + `getActiveModel(...)`. Forgetting `initialize()` with engine instances throws at runtime.
-2. **DOWNLOAD MODELS NOW, before you're offline.** Venue has no internet. Pre-download to each phone (or bundle) and use `.fromFile()`/`.fromAsset()`. All gemma-licensed repos are gated (accepted license + `hf_` token) — that includes `google/gemma-3n-*` AND `litert-community/Gemma3-1B-IT`; only `litert-community/gemma-4-E2B-it-litert-lm` (Apache-2.0) is ungated. Use `/resolve/main/` URLs, never `/blob/main/` (404).
-3. **`maxTokens` ≠ reply length.** It's the whole KV-cache/context window; `.litertlm` requires ≥1024 (also the default) — too-small values crashed with `DYNAMIC_UPDATE_SLICE` errors (see issue #318; ⚠ "now auto-clamped" unverified). Cap replies with `maxOutputTokens` on `createChat` — and note `.task`/MediaPipe **ignores** `maxOutputTokens`.
-4. **`supportImage: true` must be set in BOTH `getActiveModel()` and `createChat()`** or images silently degrade/fail.
-5. **Mali GPUs (Pixel 7a-class, many mid-range Androids) hard-froze on the vision encoder** — issue #324 (WebGPU/Vulkan fallback path on Mali-G710) is still OPEN as of 1.2.2; keep the manifest lines above anyway. If a demo phone freezes on GPU, retry with `PreferredBackend.cpu` — keep a CPU toggle in your debug UI.
-6. **iOS without the `increased-memory-limit` entitlement = jetsam kill mid-generation** on 2-3GB models. Also `.litertlm` on arm64-only: ship `abiFilters 'arm64-v8a'` on Android or old test phones get a broken native load.
-7. First `getActiveModel()` after install does the heavy weight load (10-60s). Do it behind a splash screen once; generation is serialized (one session generates at a time) — queue requests, don't parallelize.
-
-## Sources
-- https://pub.dev/packages/flutter_gemma (1.2.2, 2026-07-08) + /changelog
-- https://github.com/DenisovAV/flutter_gemma (README at packages/flutter_gemma/README.md; signatures verified in lib/flutter_gemma_interface.dart, lib/core/api/flutter_gemma.dart, lib/core/tool.dart)
-- https://fluttergemma.dev/docs/multimodal , /docs/function-calling
-- HF file listings: google/gemma-3n-E2B-it-litert-preview, google/gemma-3n-E2B-it-litert-lm, litert-community/gemma-4-E2B-it-litert-lm
-- Issues: #318 (DYNAMIC_UPDATE_SLICE crash), #324 (Mali freeze), #226 (shared session), #214 (GPU garbage output)
+1. **iOS + `.litertlm` = TEXT ONLY.** Vision on iPhone silently isn't a thing in 0.13.6. Photo→card demos run on the Androids; iPhone 16 does Hindi-text→card only.
+2. **Download the model NOW, before the venue.** No internet there. `/resolve/main/` URLs, never `/blob/main/` (HTML, not the file). HF CDN does NOT support resume — interrupted download restarts from 0. Android >500MB downloads auto-use a foreground service (notification appears — normal).
+3. **`maxTokens` is the ENTIRE context window** (prompt + image tokens + reply). There is **no `maxOutputTokens` in 0.13.6** — cap verbosity via the system instruction. Check budget with `session.sizeInTokens(text)`.
+4. **`generateChatResponse()` returns `ModelResponse`, not `String`.** Always `if (response is TextResponse) response.token` — pattern-match or you get nothing.
+5. `getActiveModel()` throws `StateError('No active inference model set…')` if `installModel()` never ran — gate app start on `isModelInstalled`. First `getActiveModel()` does the slow weight load: once, behind splash, then keep warm.
+6. CHANGELOG traps fixed in 0.13.3–0.13.6 (stay pinned, don't downgrade): iOS pod install hang (0.13.3), iOS XNNPack compile error + arm64 simulator (0.13.4), Qwen3 think-tag leakage (0.13.5). Gemma 4 thinking mode only works since 0.13.1 (and not on Web).
+7. Model files are 2.4GB — **never commit** (already gitignored). Sideload per phone via `adb push` / Files, then `.fromFile()`.
