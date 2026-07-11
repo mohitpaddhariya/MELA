@@ -36,11 +36,21 @@ class SyncService {
   void stop() {
     _stopped = true;
     _retry?.cancel();
-    _ch?.sink.close();
+    final ch = _ch;
+    _ch = null; // late onDone from this channel must not touch the next one
+    ch?.sink.close();
     status.value = SyncStatus.offline;
   }
 
   // --- public API used by screens ---
+
+  /// Monotonic per-card stamp: phones on a hotspot have NO NTP — a station
+  /// with a slow wall clock must still produce a strictly newer updated_at,
+  /// or the hub would reject its Confirm as stale (visible un-confirm).
+  int _stampAfter(MelaCard card) {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    return now > card.updatedAt ? now : card.updatedAt + 1;
+  }
 
   /// Local truth first, then queue for the world.
   Future<void> publishCard(MelaCard card) async {
@@ -51,9 +61,8 @@ class SyncService {
 
   Future<void> publishMatchCandidate(
       MelaCard card, Map<String, String> fields) async {
-    final updated = card.copyWith(
-        status: 'candidate',
-        updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final updated =
+        card.copyWith(status: 'candidate', updatedAt: _stampAfter(card));
     await store.merge(updated);
     await store.enqueue(SyncMessage.encodeCardUpsert(updated));
     await store.enqueue(SyncMessage.encodeMatchCandidate(
@@ -62,9 +71,8 @@ class SyncService {
   }
 
   Future<void> publishResolve(MelaCard card) async {
-    final updated = card.copyWith(
-        status: 'resolved',
-        updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    final updated =
+        card.copyWith(status: 'resolved', updatedAt: _stampAfter(card));
     await store.merge(updated);
     await store.enqueue(SyncMessage.encodeCardUpsert(updated));
     await store.enqueue(SyncMessage.encodeResolve(card.id, MelaConfig.station));
@@ -76,15 +84,39 @@ class SyncService {
   void _connect() {
     if (_stopped) return;
     status.value = SyncStatus.connecting;
+    final WebSocketChannel ch;
     try {
-      _ch = WebSocketChannel.connect(Uri.parse(MelaConfig.hubUrl));
-      _ch!.stream.listen(_onMessage, onDone: _onDrop, onError: (_) => _onDrop());
-      _ch!.sink.add(SyncMessage.encodeHello(MelaConfig.station));
+      ch = WebSocketChannel.connect(Uri.parse(MelaConfig.hubUrl));
+    } catch (_) {
+      _onDrop(); // malformed URL typed into the config dialog
+      return;
+    }
+    _ch = ch;
+    // Guards: events from a superseded channel (Save+reconnect, retries)
+    // must never touch the current one — else broadcasts double-process.
+    ch.stream.listen(
+      (raw) {
+        if (identical(_ch, ch)) _onMessage(raw);
+      },
+      onDone: () {
+        if (identical(_ch, ch)) _onDrop();
+      },
+      onError: (_) {
+        if (identical(_ch, ch)) _onDrop();
+      },
+    );
+    // CRITICAL: only after the socket is provably open do we go online and
+    // flush — sink.add on a doomed channel is silently discarded by
+    // web_socket_channel 3.x, and markSent would destroy the queued cards.
+    ch.ready.then((_) {
+      if (_stopped || !identical(_ch, ch)) return;
+      ch.sink.add(SyncMessage.encodeHello(MelaConfig.station));
       status.value = SyncStatus.online;
       _flush();
-    } catch (_) {
-      _onDrop();
-    }
+    }).catchError((_) {
+      // stream onError already scheduled the retry; this only silences
+      // the unhandled-Future error from `ready`.
+    });
   }
 
   void _onDrop() {
@@ -135,9 +167,8 @@ class SyncService {
         if (id is String) {
           final c = store.byId(id);
           if (c != null && c.status != 'resolved') {
-            await store.merge(c.copyWith(
-                status: 'resolved',
-                updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000));
+            await store.merge(
+                c.copyWith(status: 'resolved', updatedAt: _stampAfter(c)));
           }
           onResolve?.call(id);
         }

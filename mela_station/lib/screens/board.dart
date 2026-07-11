@@ -88,6 +88,9 @@ class _BoardScreenState extends State<BoardScreen> {
     if (ok == true) {
       MelaConfig.station = station.text.trim();
       MelaConfig.hubUrl = hub.text.trim();
+      // Persist — the kill+restart demo beat must come back as itself.
+      await widget.store.setSetting('station', MelaConfig.station);
+      await widget.store.setSetting('hubUrl', MelaConfig.hubUrl);
       widget.sync.stop();
       widget.sync.start();
       setState(() {});

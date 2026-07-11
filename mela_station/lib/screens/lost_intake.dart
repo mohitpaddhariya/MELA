@@ -39,15 +39,21 @@ class _LostIntakeScreenState extends State<LostIntakeScreen> {
     final input = _text.text.trim();
     if (input.isEmpty || _busy) return;
     setState(() => _busy = true);
-    final attrs = await widget.gemma.extractFromText(input);
-    final fu = nextFollowUp(attrs);
-    setState(() {
-      _attrs = attrs;
-      _followUp = fu;
-      _busy = false;
-    });
-    if (fu != null) {
-      await widget.speech.speak(fu.questionHindi); // the agent asks ALOUD
+    try {
+      final attrs = await widget.gemma.extractFromText(input);
+      final fu = nextFollowUp(attrs);
+      if (!mounted) return;
+      setState(() {
+        _attrs = attrs;
+        _followUp = fu;
+      });
+      if (fu != null) {
+        await widget.speech.speak(fu.questionHindi); // the agent asks ALOUD
+      }
+    } catch (_) {
+      _toast('Model abhi ready nahi — 10s baad phir try karo');
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -55,20 +61,31 @@ class _LostIntakeScreenState extends State<LostIntakeScreen> {
     final ans = _answer.text.trim();
     if (ans.isEmpty || _attrs == null || _busy) return;
     setState(() => _busy = true);
-    final merged = await widget.gemma.extractFromText(ans, existing: _attrs);
-    setState(() {
-      _attrs = merged;
-      _followUpDone = true; // ONE question only — never interrogate
-      _followUp = null;
-      _busy = false;
-    });
+    try {
+      final merged = await widget.gemma.extractFromText(ans, existing: _attrs);
+      if (!mounted) return;
+      setState(() {
+        _attrs = merged;
+        _followUpDone = true; // ONE question only — never interrogate
+        _followUp = null;
+      });
+    } catch (_) {
+      _toast('Model abhi ready nahi — 10s baad phir try karo');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
   }
 
   Future<void> _save() async {
     final attrs = _attrs;
     if (attrs == null) return;
     final card = MelaCard(
-      id: MelaConfig.nextCardId(),
+      id: widget.sync.store.nextCardId(),
       station: MelaConfig.station,
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       kind: 'lost',

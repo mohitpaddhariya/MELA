@@ -13,6 +13,6 @@ class MelaConfig {
   /// Flip to swap MockGemmaService -> real FlutterGemmaService (Stage 4).
   static bool useMockAi = true;
 
-  static int _seq = 100;
-  static String nextCardId() => '$station-${++_seq}';
+  // Card ids are minted by CardStore.nextCardId() — persisted so a revived
+  // station never reuses an id.
 }

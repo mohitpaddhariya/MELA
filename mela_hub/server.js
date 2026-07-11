@@ -63,7 +63,11 @@ wss.on('connection', (ws, req) => {
       case 'RESOLVE': {
         log(`RESOLVE ${msg.card_id} by ${msg.by}`);
         const c = cards.get(msg.card_id);
-        if (c) { c.status = 'resolved'; c.updated_at = Math.floor(Date.now() / 1000); }
+        if (c) {
+          c.status = 'resolved';
+          // monotonic: never stamp behind the card (phones have no NTP)
+          c.updated_at = Math.max(Math.floor(Date.now() / 1000), c.updated_at + 1);
+        }
         broadcast(msg, ws);
         break;
       }

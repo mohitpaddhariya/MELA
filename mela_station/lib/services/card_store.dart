@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../config.dart';
 import '../models/mela_card.dart';
 
 /// Restart-safe local truth. Cards live in Hive as JSON strings (no codegen).
@@ -8,11 +9,30 @@ import '../models/mela_card.dart';
 class CardStore extends ChangeNotifier {
   late Box<String> _cards; // id -> card json
   late Box<String> _outbox; // seq -> raw wire message json
+  late Box<String> _settings; // station, hubUrl, per-station id seq
 
   Future<void> init() async {
     await Hive.initFlutter();
     _cards = await Hive.openBox<String>('cards');
     _outbox = await Hive.openBox<String>('outbox');
+    _settings = await Hive.openBox<String>('settings');
+  }
+
+  // --- settings (kill+restart must NOT forget who this station is) ---
+
+  String? getSetting(String key) => _settings.get(key);
+
+  Future<void> setSetting(String key, String value) async {
+    await _settings.put(key, value);
+  }
+
+  /// Persisted per-station counter — a revived station must never re-mint
+  /// an id it already used (newer-updated_at-wins would eat the original).
+  String nextCardId() {
+    final key = 'seq_${MelaConfig.station}';
+    final next = (int.tryParse(_settings.get(key) ?? '') ?? 100) + 1;
+    _settings.put(key, '$next');
+    return '${MelaConfig.station}-$next';
   }
 
   List<MelaCard> get all {

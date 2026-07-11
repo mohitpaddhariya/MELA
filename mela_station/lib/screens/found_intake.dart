@@ -41,12 +41,15 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
         _busy = true;
       });
       final attrs = await widget.gemma.extractFromImage(bytes);
-      setState(() {
-        _attrs = attrs;
-        _busy = false;
-      });
+      if (!mounted) return;
+      setState(() => _attrs = attrs);
     } catch (_) {
-      setState(() => _busy = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Model abhi ready nahi — 10s baad phir try karo')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
     }
   }
 
@@ -54,7 +57,7 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
     final attrs = _attrs;
     if (attrs == null) return;
     final card = MelaCard(
-      id: MelaConfig.nextCardId(),
+      id: widget.sync.store.nextCardId(),
       station: MelaConfig.station,
       updatedAt: DateTime.now().millisecondsSinceEpoch ~/ 1000,
       kind: 'found',

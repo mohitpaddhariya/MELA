@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'config.dart';
@@ -21,20 +24,26 @@ late final SyncService sync;
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await store.init(); // restart-safe truth first
+  // A revived station must come back as ITSELF (station id + hub IP).
+  MelaConfig.station = store.getSetting('station') ?? MelaConfig.station;
+  MelaConfig.hubUrl = store.getSetting('hubUrl') ?? MelaConfig.hubUrl;
 
   // THE AI SEAM: flip MelaConfig.useMockAi=false for the real on-device brain.
   gemma = MelaConfig.useMockAi ? MockGemmaService() : FlutterGemmaService();
 
+  // Sync + chirp are wired and running BEFORE any heavy init: a slow or
+  // failed model load must never kill the resync/chirp demo beats.
   sync = SyncService(store);
-  runApp(const MelaApp());
-
-  // Heavy init AFTER first frame — never block a demo launch.
-  await speech.init();
-  await gemma.init();
-  sync.start();
   sync.onMatchCandidate = (cardId, foundAt) {
     speech.speak('संभावित मिलान मिला। कार्ड $cardId। स्टेशन $foundAt पर।');
   };
+  sync.start();
+
+  runApp(const MelaApp());
+
+  // Heavy init AFTER first frame, independently — errors stay local.
+  unawaited(speech.init().catchError((e) => debugPrint('speech init: $e')));
+  unawaited(gemma.init().catchError((e) => debugPrint('gemma init: $e')));
 }
 
 class MelaApp extends StatelessWidget {
