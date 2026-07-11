@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -43,10 +44,12 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
       final attrs = await widget.gemma.extractFromImage(bytes);
       if (!mounted) return;
       setState(() => _attrs = attrs);
-    } catch (_) {
+    } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text('Model abhi ready nahi — 10s baad phir try karo')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(e.toString().contains('camera')
+                ? 'Camera is device par nahi hai — Gallery use karo'
+                : 'Model abhi ready nahi — 10s baad phir try karo')));
       }
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -84,19 +87,28 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
             'attribute card sync hota hai.',
             style: TextStyle(fontSize: 12, color: Colors.grey)),
         const SizedBox(height: 12),
-        Row(children: [
-          FilledButton.icon(
-            onPressed: _busy ? null : () => _pick(ImageSource.camera),
-            icon: const Icon(Icons.photo_camera),
-            label: const Text('Photo lo'),
-          ),
-          const SizedBox(width: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _pick(ImageSource.gallery),
-            icon: const Icon(Icons.photo_library),
-            label: const Text('Gallery'),
-          ),
-        ]),
+        if (!Platform.isAndroid)
+          const Card(
+            child: Padding(
+              padding: EdgeInsets.all(12),
+              child: Text('📷 Photo → card (Gemma vision) sirf ANDROID '
+                  'station par chalta hai. Yahan sirf lost-intake test karo.'),
+            ),
+          )
+        else
+          Row(children: [
+            FilledButton.icon(
+              onPressed: _busy ? null : () => _pick(ImageSource.camera),
+              icon: const Icon(Icons.photo_camera),
+              label: const Text('Photo lo'),
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _pick(ImageSource.gallery),
+              icon: const Icon(Icons.photo_library),
+              label: const Text('Gallery'),
+            ),
+          ]),
         if (_photo != null) ...[
           const SizedBox(height: 12),
           ClipRRect(
