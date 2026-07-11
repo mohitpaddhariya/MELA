@@ -119,3 +119,5 @@ Release builds: ProGuard rules auto-included (keep `com.google.mediapipe.**` / `
 7. Model files are 2.4GB — **never commit** (already gitignored). Sideload per phone via `adb push` / Files, then `.fromFile()`.
 
 8. **Desktop/iOS: supportImage MUST be false for Gemma 4 .litertlm.** The desktop LiteRT-LM runtime rejects the Gemma 4 vision encoder ("must have exactly one signature but got 3") and the whole engine init fails. Vision = Android only. Also: the bundled JVM server is signed sandbox-inherit — never disable the macOS app sandbox; put the model INSIDE the app container instead.
+
+9. **CONFIRMED ON REAL HARDWARE (OnePlus, Jul 11): Gemma 4 .litertlm VISION does not work with flutter_gemma 0.13.6 AT ALL** — "Vision Encoder model must have exactly one signature but got 3" on every platform/backend. Gemma 4 = TEXT ONLY on 0.13.6. For vision use Gemma 3n E2B .task (MediaPipe path, gated repo, needs HF token) or upgrade to plugin 1.x (needs Dart >=3.12 — banned today).
