@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
 import 'config.dart';
 import 'screens/board.dart';
@@ -32,11 +33,25 @@ void main() async {
   // platforms). Init failure degrades to mock inside FlutterGemmaService —
   // the app can no longer crash from a bad model load. The persisted Board
   // toggle always wins if the user set it explicitly.
+  if (Platform.isAndroid) {
+    // Creates Android/data/<pkg>/files as APP-OWNED (shell-made dirs are
+    // invisible to the app). Model gets adb-pushed here after first run.
+    final ext = await getExternalStorageDirectory();
+    if (ext != null) {
+      FlutterGemmaService.androidExternalModelPath =
+          '${ext.path}/gemma-4-E2B-it.litertlm';
+    }
+  }
   final mockSetting = store.getSetting('useMockAi');
   final modelPresent =
       FlutterGemmaService.sideloadPaths.any((p) => File(p).existsSync());
+  for (final p in FlutterGemmaService.sideloadPaths) {
+    debugPrint('MELA brain probe: $p -> ${File(p).existsSync()}');
+  }
   MelaConfig.useMockAi =
       mockSetting != null ? mockSetting != 'false' : !modelPresent;
+  debugPrint('MELA brain: useMockAi=${MelaConfig.useMockAi} '
+      '(setting=$mockSetting, modelPresent=$modelPresent)');
 
   // THE AI SEAM: flip MelaConfig.useMockAi=false for the real on-device brain.
   gemma = MelaConfig.useMockAi ? MockGemmaService() : FlutterGemmaService();

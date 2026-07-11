@@ -53,7 +53,8 @@ class _BoardScreenState extends State<BoardScreen> {
         return ListView(
           padding: const EdgeInsets.all(12),
           children: [
-            Row(children: [
+            Wrap(spacing: 6, runSpacing: 6, crossAxisAlignment:
+                WrapCrossAlignment.center, children: [
               ValueListenableBuilder<SyncStatus>(
                 valueListenable: widget.sync.status,
                 builder: (_, s, __) => Chip(
@@ -68,7 +69,6 @@ class _BoardScreenState extends State<BoardScreen> {
                       'queue ${widget.store.pendingCount}'),
                 ),
               ),
-              const SizedBox(width: 6),
               // Which brain is running — judges (and we) must never wonder.
               Chip(
                 avatar: Icon(
@@ -85,7 +85,6 @@ class _BoardScreenState extends State<BoardScreen> {
                         ? 'GEMMA 4 E2B on-device'
                         : 'GEMMA 4 loading…')),
               ),
-              const Spacer(),
               IconButton(
                   onPressed: () => _editConfig(context),
                   icon: const Icon(Icons.settings)),
