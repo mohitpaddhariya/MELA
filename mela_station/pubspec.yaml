@@ -1,0 +1,27 @@
+name: mela_station
+description: "A new Flutter project."
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_gemma: ^0.13.6
+  flutter_tts: ^4.2.5
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  image_picker: ^1.2.3
+  path_provider: ^2.1.6
+  speech_to_text: ^7.4.0
+  web_socket_channel: ^3.0.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
