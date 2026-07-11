@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -27,6 +28,12 @@ void main() async {
   // A revived station must come back as ITSELF (station id + hub IP).
   MelaConfig.station = store.getSetting('station') ?? MelaConfig.station;
   MelaConfig.hubUrl = store.getSetting('hubUrl') ?? MelaConfig.hubUrl;
+  // Real Gemma by default whenever the model file is on this device;
+  // the Board toggle (persisted) always wins if the user set it.
+  final mockSetting = store.getSetting('useMockAi');
+  MelaConfig.useMockAi = mockSetting != null
+      ? mockSetting != 'false'
+      : !FlutterGemmaService.sideloadPaths.any((p) => File(p).existsSync());
 
   // THE AI SEAM: flip MelaConfig.useMockAi=false for the real on-device brain.
   gemma = MelaConfig.useMockAi ? MockGemmaService() : FlutterGemmaService();
@@ -75,7 +82,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final screens = [
-      BoardScreen(store: store, sync: sync),
+      BoardScreen(store: store, sync: sync, gemma: gemma),
       LostIntakeScreen(gemma: gemma, speech: speech, sync: sync),
       FoundIntakeScreen(
           gemma: gemma, sync: sync, onFiled: () => setState(() => _tab = 3)),

@@ -3,14 +3,20 @@ import 'package:flutter/material.dart';
 import '../config.dart';
 import '../models/mela_card.dart';
 import '../services/card_store.dart';
+import '../services/gemma_service.dart';
 import '../services/sync_service.dart';
 
 /// Card board + sync status + demo-day config (station id, hub IP).
 class BoardScreen extends StatefulWidget {
-  const BoardScreen({super.key, required this.store, required this.sync});
+  const BoardScreen(
+      {super.key,
+      required this.store,
+      required this.sync,
+      required this.gemma});
 
   final CardStore store;
   final SyncService sync;
+  final GemmaService gemma;
 
   @override
   State<BoardScreen> createState() => _BoardScreenState();
@@ -41,6 +47,23 @@ class _BoardScreenState extends State<BoardScreen> {
                       'queue ${widget.store.pendingCount}'),
                 ),
               ),
+              const SizedBox(width: 6),
+              // Which brain is running — judges (and we) must never wonder.
+              Chip(
+                avatar: Icon(
+                    MelaConfig.useMockAi ? Icons.smart_toy : Icons.memory,
+                    size: 16),
+                backgroundColor: MelaConfig.useMockAi
+                    ? Colors.grey.shade300
+                    : (widget.gemma.isReady
+                        ? Colors.green.shade100
+                        : Colors.amber.shade100),
+                label: Text(MelaConfig.useMockAi
+                    ? 'MOCK brain'
+                    : (widget.gemma.isReady
+                        ? 'GEMMA 4 E2B on-device'
+                        : 'GEMMA 4 loading…')),
+              ),
               const Spacer(),
               IconButton(
                   onPressed: () => _editConfig(context),
@@ -62,27 +85,37 @@ class _BoardScreenState extends State<BoardScreen> {
   Future<void> _editConfig(BuildContext context) async {
     final station = TextEditingController(text: MelaConfig.station);
     final hub = TextEditingController(text: MelaConfig.hubUrl);
+    var realAi = !MelaConfig.useMockAi;
     final ok = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Station config'),
-        content: Column(mainAxisSize: MainAxisSize.min, children: [
-          TextField(
-              controller: station,
-              decoration: const InputDecoration(labelText: 'Station ID')),
-          TextField(
-              controller: hub,
-              decoration:
-                  const InputDecoration(labelText: 'Hub URL (ws://ip:8765)')),
-        ]),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context, false),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, true),
-              child: const Text('Save + reconnect')),
-        ],
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Station config'),
+          content: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(
+                controller: station,
+                decoration: const InputDecoration(labelText: 'Station ID')),
+            TextField(
+                controller: hub,
+                decoration:
+                    const InputDecoration(labelText: 'Hub URL (ws://ip:8765)')),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Real Gemma (restart app)'),
+              subtitle: const Text('Off = mock brain for UI testing'),
+              value: realAi,
+              onChanged: (v) => setDialog(() => realAi = v),
+            ),
+          ]),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: const Text('Save + reconnect')),
+          ],
+        ),
       ),
     );
     if (ok == true) {
@@ -91,6 +124,7 @@ class _BoardScreenState extends State<BoardScreen> {
       // Persist — the kill+restart demo beat must come back as itself.
       await widget.store.setSetting('station', MelaConfig.station);
       await widget.store.setSetting('hubUrl', MelaConfig.hubUrl);
+      await widget.store.setSetting('useMockAi', realAi ? 'false' : 'true');
       widget.sync.stop();
       widget.sync.start();
       setState(() {});

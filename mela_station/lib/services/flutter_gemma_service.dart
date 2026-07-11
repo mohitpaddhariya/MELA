@@ -16,6 +16,14 @@ class FlutterGemmaService implements GemmaService {
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm'
       '/resolve/main/gemma-4-E2B-it.litertlm'; // ungated, 2.4GB — download BEFORE the venue
 
+  /// Sideloaded model locations, checked before any network attempt
+  /// (offline venue!). Mac dev path is hardcoded (CLAUDE.md rule); phones
+  /// get the file via adb push / Files into these spots.
+  static const sideloadPaths = [
+    '/Users/mohitpaddhariya/flagship-projects/MELA/models/gemma-4-E2B-it.litertlm',
+    '/sdcard/Download/gemma-4-E2B-it.litertlm',
+  ];
+
   InferenceModel? _model;
   bool _ready = false;
 
@@ -31,13 +39,23 @@ class FlutterGemmaService implements GemmaService {
   Future<void> init() async {
     await FlutterGemma.initialize();
     if (!await FlutterGemma.isModelInstalled(modelFile)) {
-      // On-site the file is sideloaded (adb push / Files) and installed via
-      // .fromFile by the setup step; network install is the pre-venue path.
-      await FlutterGemma.installModel(modelType: ModelType.gemmaIt)
-          .fromNetwork(modelUrl)
-          .withProgress((p) => downloadProgress.value = p)
-          .install();
-      downloadProgress.value = null;
+      final installer = FlutterGemma.installModel(modelType: ModelType.gemmaIt);
+      String? local;
+      for (final p in sideloadPaths) {
+        if (File(p).existsSync()) {
+          local = p;
+          break;
+        }
+      }
+      if (local != null) {
+        await installer.fromFile(local).install(); // offline path — references, no copy
+      } else {
+        await installer
+            .fromNetwork(modelUrl)
+            .withProgress((p) => downloadProgress.value = p)
+            .install();
+        downloadProgress.value = null;
+      }
     }
     // The slow weight load — ONCE, then warm forever (CLAUDE.md landmine).
     _model = await FlutterGemma.getActiveModel(
