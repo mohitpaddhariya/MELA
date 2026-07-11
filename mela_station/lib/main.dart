@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_gemma/flutter_gemma.dart';
+import 'package:flutter_gemma_litertlm/flutter_gemma_litertlm.dart';
 import 'package:path_provider/path_provider.dart';
 
 import 'config.dart';
@@ -25,6 +27,11 @@ late final SyncService sync;
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Register the LiteRT-LM engine (1.x API) — must happen before any
+  // FlutterGemma call. try/catch survives hot-restart double-init.
+  try {
+    FlutterGemma.initialize(inferenceEngines: const [LiteRtLmEngine()]);
+  } catch (_) {}
   await store.init(); // restart-safe truth first
   // A revived station must come back as ITSELF (station id + hub IP).
   MelaConfig.station = store.getSetting('station') ?? MelaConfig.station;
@@ -103,7 +110,10 @@ class _HomeShellState extends State<HomeShell> {
       BoardScreen(store: store, sync: sync, gemma: gemma),
       LostIntakeScreen(gemma: gemma, speech: speech, sync: sync),
       FoundIntakeScreen(
-          gemma: gemma, sync: sync, onFiled: () => setState(() => _tab = 3)),
+          gemma: gemma,
+          speech: speech,
+          sync: sync,
+          onFiled: () => setState(() => _tab = 3)),
       MatchesScreen(store: store, sync: sync),
     ];
     return Scaffold(

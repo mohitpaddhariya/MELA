@@ -7,15 +7,23 @@ import 'package:image_picker/image_picker.dart';
 import '../config.dart';
 import '../models/mela_card.dart';
 import '../services/gemma_service.dart';
+import '../services/speech_service.dart';
 import '../services/sync_service.dart';
 
-/// Found-person intake: ONE consented photo -> Gemma vision -> same schema.
-/// The photo NEVER leaves this phone — only the JSON card syncs.
+/// Found-person intake: ONE consented photo (Gemma vision) AND/OR a spoken
+/// description by the volunteer — both feed the same schema, and the
+/// description fills whatever the photo couldn't. Photo NEVER leaves the
+/// phone — only the JSON card syncs.
 class FoundIntakeScreen extends StatefulWidget {
   const FoundIntakeScreen(
-      {super.key, required this.gemma, required this.sync, this.onFiled});
+      {super.key,
+      required this.gemma,
+      required this.speech,
+      required this.sync,
+      this.onFiled});
 
   final GemmaService gemma;
+  final SpeechService speech;
   final SyncService sync;
   final VoidCallback? onFiled; // jump to Matches tab
 
@@ -25,10 +33,32 @@ class FoundIntakeScreen extends StatefulWidget {
 
 class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
   final _picker = ImagePicker();
+  final _desc = TextEditingController();
   Uint8List? _photo;
   Map<String, String>? _attrs;
   bool _busy = false;
   String? _savedId;
+
+  /// Volunteer's spoken/typed description -> same extraction pipeline;
+  /// merges into photo attrs when both exist.
+  Future<void> _describeExtract() async {
+    final text = _desc.text.trim();
+    if (text.isEmpty || _busy) return;
+    setState(() => _busy = true);
+    try {
+      final attrs =
+          await widget.gemma.extractFromText(text, existing: _attrs);
+      if (!mounted) return;
+      setState(() => _attrs = attrs);
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Model abhi ready nahi — 10s baad phir try karo')));
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
 
   Future<void> _pick(ImageSource source) async {
     try {
@@ -70,6 +100,7 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
       _savedId = card.id;
       _photo = null;
       _attrs = null;
+      _desc.clear();
     });
     widget.onFiled?.call();
   }
@@ -116,6 +147,38 @@ class _FoundIntakeScreenState extends State<FoundIntakeScreen> {
             child: Image.memory(_photo!, height: 220, fit: BoxFit.cover),
           ),
         ],
+        const SizedBox(height: 16),
+        TextField(
+          controller: _desc,
+          maxLines: 2,
+          decoration: const InputDecoration(
+            border: OutlineInputBorder(),
+            labelText: 'जो दिख रहा है बोलिए/लिखिए (volunteer description)',
+            hintText: 'लड़का, लाल कुर्ता, काला चश्मा, करीब छह साल…',
+          ),
+        ),
+        const SizedBox(height: 8),
+        Row(children: [
+          ValueListenableBuilder<bool>(
+            valueListenable: widget.speech.listening,
+            builder: (_, on, __) => OutlinedButton.icon(
+              onPressed: widget.speech.sttAvailable
+                  ? () => on
+                      ? widget.speech.stopListening()
+                      : widget.speech
+                          .listen((t) => setState(() => _desc.text = t))
+                  : null,
+              icon: Icon(on ? Icons.stop : Icons.mic),
+              label: Text(on ? 'सुन रहा है…' : 'बोलिए'),
+            ),
+          ),
+          const SizedBox(width: 8),
+          FilledButton.tonalIcon(
+            onPressed: _busy ? null : _describeExtract,
+            icon: const Icon(Icons.auto_awesome),
+            label: const Text('Card banao'),
+          ),
+        ]),
         if (_busy)
           const Padding(
             padding: EdgeInsets.all(24),

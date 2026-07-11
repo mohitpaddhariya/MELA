@@ -8,18 +8,16 @@ import '../models/mela_card.dart';
 import 'gemma_service.dart';
 import 'mock_gemma_service.dart';
 
-/// The REAL on-device brain: Gemma 4 E2B (.litertlm) via flutter_gemma 0.13.6.
-/// See Docs/flutter_gemma.md — 0.13.6 API, NOT the pub.dev 1.x docs.
-/// iOS .litertlm = text only; vision runs on the Androids (frozen demo plan).
+/// The REAL on-device brain: Gemma 4 E2B (.litertlm) via flutter_gemma 1.x
+/// + LiteRtLmEngine (registered in main.dart). The 1.x runtime parses the
+/// Gemma 4 vision encoder — 0.13.6 could not ("3 signatures" error).
+/// One-shot sessions per extraction = fresh context per case.
 class FlutterGemmaService implements GemmaService {
   static const modelFile = 'gemma-4-E2B-it.litertlm';
   static const modelUrl =
       'https://huggingface.co/litert-community/gemma-4-E2B-it-litert-lm'
       '/resolve/main/gemma-4-E2B-it.litertlm'; // ungated, 2.4GB — download BEFORE the venue
 
-  /// Sideloaded model locations, checked before any network attempt
-  /// (offline venue!). Mac dev path is hardcoded (CLAUDE.md rule); phones
-  /// get the file via adb push / Files into these spots.
   /// Android external-files dir path, resolved by main() via path_provider
   /// so the APP creates/owns the dir (a shell-created dir is invisible to
   /// the app through FUSE). adb push the model here AFTER first app run.
@@ -27,8 +25,6 @@ class FlutterGemmaService implements GemmaService {
 
   static const _staticSideloadPaths = [
     '/sdcard/Download/gemma-4-E2B-it.litertlm',
-    // macOS: inside the sandbox container — both app AND its child JVM
-    // inference server can read here without entitlement tricks.
     '/Users/mohitpaddhariya/Library/Containers/com.mela.melaStation/Data/'
         'Documents/gemma-4-E2B-it.litertlm',
     '/Users/mohitpaddhariya/flagship-projects/MELA/models/gemma-4-E2B-it.litertlm',
@@ -42,25 +38,28 @@ class FlutterGemmaService implements GemmaService {
   InferenceModel? _model;
   bool _ready = false;
 
-  /// If real inference can't come up (e.g. the flaky desktop gRPC server),
-  /// the app must NOT break — extraction quietly falls back to the mock so
-  /// every screen keeps working. Set only after a failed init.
+  /// If real inference can't come up, extraction degrades to the mock so
+  /// the app never breaks. Set only after all engine attempts fail.
   MockGemmaService? _fallback;
   bool get usingFallback => _fallback != null;
 
   /// Download progress 0-100 while installing (UI can watch this).
   final downloadProgress = ValueNotifier<int?>(null);
 
-  // Vision ONLY on Android (frozen demo plan). iOS .litertlm is text-only,
-  // and the desktop LiteRT-LM runtime can't parse Gemma 4's vision encoder
-  // ("must have exactly one signature but got 3") — text-only loads fine.
-  bool get _visionOk => Platform.isAndroid;
+  /// Whether the engine that actually came up supports images.
+  bool _visionActive = false;
+  bool get visionActive => _visionActive;
+
+  bool get _visionOk => Platform.isAndroid; // demo plan: vision on Androids
 
   @override
   bool get isReady => _ready;
 
   Future<void> _ensureInstalled() async {
-    final installer = FlutterGemma.installModel(modelType: ModelType.gemmaIt);
+    final installer = FlutterGemma.installModel(
+      modelType: ModelType.gemma4,
+      fileType: ModelFileType.litertlm,
+    );
     String? local;
     for (final p in sideloadPaths) {
       if (File(p).existsSync()) {
@@ -69,7 +68,7 @@ class FlutterGemmaService implements GemmaService {
       }
     }
     if (local != null) {
-      await installer.fromFile(local).install(); // offline path — references, no copy
+      await installer.fromFile(local).install();
     } else {
       await installer
           .fromNetwork(modelUrl)
@@ -79,17 +78,11 @@ class FlutterGemmaService implements GemmaService {
     }
   }
 
-  /// Whether the engine that actually came up supports images.
-  bool _visionActive = false;
-  bool get visionActive => _visionActive;
-
   /// Load ladder: GPU+vision -> CPU+vision -> GPU text -> CPU text -> mock.
-  /// Covers emulators (no OpenCL), phones with broken GPU delegates, and
-  /// desktop (no vision encoder support) with ONE code path.
   @override
   Future<void> init() async {
     try {
-      await FlutterGemma.initialize();
+      // Engine registration happens in main(); here we only install + load.
       if (!await FlutterGemma.isModelInstalled(modelFile)) {
         await _ensureInstalled();
       }
@@ -102,7 +95,12 @@ class FlutterGemmaService implements GemmaService {
       for (var round = 0; round < 2; round++) {
         for (final (backend, vision) in attempts) {
           try {
-            _model = await _loadModel(backend, vision);
+            await _model?.close();
+            _model = await FlutterGemma.getActiveModel(
+              maxTokens: 4096,
+              preferredBackend: backend,
+              supportImage: vision,
+            );
             _visionActive = vision;
             debugPrint('gemma engine UP: backend=${backend.name} '
                 'vision=$vision (round $round)');
@@ -118,21 +116,12 @@ class FlutterGemmaService implements GemmaService {
       }
       throw StateError('all engine attempts failed');
     } catch (e) {
-      // Real inference unavailable — degrade to mock, never crash the app.
       debugPrint('FlutterGemmaService init failed ($e) — using mock fallback');
       _fallback = MockGemmaService();
       await _fallback!.init();
       _ready = true;
     }
   }
-
-  Future<InferenceModel> _loadModel(PreferredBackend backend, bool vision) =>
-      FlutterGemma.getActiveModel(
-        maxTokens: 4096,
-        preferredBackend: backend,
-        supportImage: vision,
-        maxNumImages: vision ? 1 : null,
-      );
 
   String _schemaPrompt(String task) =>
       'You are helping at a lost-and-found camp at an Indian mela. $task\n'
@@ -162,7 +151,7 @@ class FlutterGemmaService implements GemmaService {
   Future<Map<String, String>> extractFromImage(Uint8List imageBytes) async {
     if (_fallback != null) return _fallback!.extractFromImage(imageBytes);
     if (!_visionActive) {
-      // Frozen plan: photos are taken on Android stations. Never crash.
+      // Engine came up text-only: found intake falls back to description.
       return {for (final k in MelaCard.attributeKeys) k: 'unknown'};
     }
     final raw = await _generate(
@@ -173,21 +162,24 @@ class FlutterGemmaService implements GemmaService {
     return _parseAttrs(raw);
   }
 
-  /// Fresh chat per request — no cross-case contamination; weights stay warm.
+  /// One-shot session per request (fresh context, weights stay warm).
   Future<String> _generate(String prompt, {Uint8List? image}) async {
     final model = _model;
     if (model == null) throw StateError('Gemma not initialized');
-    final chat = await model.createChat(
+    final session = await model.createSession(
+      enableVisionModality: image != null && _visionActive,
       temperature: 0.2, // extraction wants determinism, not creativity
       topK: 40,
-      supportImage: image != null && _visionActive,
-      isThinking: false, // speed (cut ladder already dropped thinking display)
     );
-    await chat.addQueryChunk(image == null
-        ? Message.text(text: prompt, isUser: true)
-        : Message.withImage(text: prompt, imageBytes: image, isUser: true));
-    final response = await chat.generateChatResponse();
-    return response is TextResponse ? response.token : '';
+    try {
+      await session.addQueryChunk(image == null
+          ? Message.text(text: prompt, isUser: true)
+          : Message.withImages(
+              text: prompt, imageBytes: [image], isUser: true));
+      return await session.getResponse();
+    } finally {
+      await session.close();
+    }
   }
 
   /// Model output -> schema-clamped attribute map. Tolerates ```json fences
