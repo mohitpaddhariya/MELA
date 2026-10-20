@@ -22,8 +22,37 @@ class MockGemmaService implements GemmaService {
   @override
   Future<Map<String, String>> extractFromText(String text,
       {Map<String, String>? existing}) async {
-    await Future<void>.delayed(const Duration(milliseconds: 400)); // feel real
+    await Future<void>.delayed(const Duration(milliseconds: 900)); // feel real
     final t = text.toLowerCase();
+
+    // ---- scripted demo lines (typed verbatim) get perfect cards ----
+    if (t.contains('chotu') && (t.contains('kurta') || t.contains('कुर्ता'))) {
+      // A: "mera beta 6 saal ka hai, lal kurta, naam Chotu, Ram Ghat pe kho gaya"
+      return {
+        'age_range': '5-7', 'gender': 'male', 'name_response': 'Chotu',
+        'clothing_top': 'red kurta', 'clothing_bottom': 'unknown',
+        'glasses': 'unknown', 'hair': 'black', 'marks': 'unknown',
+        'last_seen': 'Ram Ghat',
+      };
+    }
+    if (existing != null &&
+        (t.contains('kaala chashma') ||
+            t.contains('kala chashma') ||
+            t.contains('काला चश्मा'))) {
+      // A follow-up answer: "haan, kaala chashma"
+      return {...existing, 'glasses': 'black frame'};
+    }
+    if ((t.contains('mila') || t.contains('मिला')) &&
+        (t.contains('chashma') || t.contains('चश्मा'))) {
+      // B: "ladka mila hai, lal kurta, kaala chashma, umar 5-6 saal"
+      return {
+        'age_range': '5-6', 'gender': 'male', 'name_response': 'unknown',
+        'clothing_top': 'red kurta', 'clothing_bottom': 'unknown',
+        'glasses': 'black frame', 'hair': 'black', 'marks': 'unknown',
+        'last_seen': 'unknown',
+      };
+    }
+    // ---- generic keyword rules below (any other input) ----
     final out = Map<String, String>.of(existing ?? const {});
 
     void fill(String key, String value) {

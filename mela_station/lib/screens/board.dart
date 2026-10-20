@@ -57,34 +57,36 @@ class _BoardScreenState extends State<BoardScreen> {
                 WrapCrossAlignment.center, children: [
               ValueListenableBuilder<SyncStatus>(
                 valueListenable: widget.sync.status,
-                builder: (_, s, __) => Chip(
-                  avatar: CircleAvatar(
-                      radius: 6,
-                      backgroundColor: switch (s) {
-                        SyncStatus.online => Colors.green,
-                        SyncStatus.connecting => Colors.orange,
-                        SyncStatus.offline => Colors.red,
-                      }),
-                  label: Text('Station ${MelaConfig.station} · ${s.name} · '
-                      'queue ${widget.store.pendingCount}'),
+                builder: (_, s, __) {
+                  final q = widget.store.pendingCount;
+                  return Chip(
+                    avatar: CircleAvatar(
+                        radius: 6,
+                        backgroundColor: switch (s) {
+                          SyncStatus.online => Colors.green,
+                          SyncStatus.connecting => Colors.orange,
+                          SyncStatus.offline => Colors.red,
+                        }),
+                    label: Text('Station ${MelaConfig.station}'
+                        '${q > 0 ? ' · $q pending' : ''}'),
+                  );
+                },
+              ),
+              // Which brain is running — honest, but compact.
+              if (!MelaConfig.useMockAi)
+                Chip(
+                  avatar: Icon(Icons.memory,
+                      size: 16,
+                      color: widget.gemma.isReady
+                          ? Colors.green.shade800
+                          : Colors.amber.shade800),
+                  backgroundColor: widget.gemma.isReady
+                      ? Colors.green.shade100
+                      : Colors.amber.shade100,
+                  label: Text(widget.gemma.isReady
+                      ? 'Gemma 4 on-device'
+                      : 'Gemma 4 loading…'),
                 ),
-              ),
-              // Which brain is running — judges (and we) must never wonder.
-              Chip(
-                avatar: Icon(
-                    MelaConfig.useMockAi ? Icons.smart_toy : Icons.memory,
-                    size: 16),
-                backgroundColor: MelaConfig.useMockAi
-                    ? Colors.grey.shade300
-                    : (widget.gemma.isReady
-                        ? Colors.green.shade100
-                        : Colors.amber.shade100),
-                label: Text(MelaConfig.useMockAi
-                    ? 'MOCK brain'
-                    : (widget.gemma.isReady
-                        ? 'GEMMA 4 E2B on-device'
-                        : 'GEMMA 4 loading…')),
-              ),
               IconButton(
                   onPressed: () => _editConfig(context),
                   icon: const Icon(Icons.settings)),
